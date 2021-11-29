@@ -1,82 +1,147 @@
-import graphviz
-from .Enum import *
-from .Arc import Arc
-from .Node import Node
 from typing import List, Tuple
+
+import graphviz
 from prettytable import PrettyTable
+
+from .Arc import Arc
+from .Enum import *
+from .Node import Node
 
 
 class Graph:
-    def __init__(self, filename: str = "graph/graph1.txt"):
+    def __init__(self, filename: str = "graph/graph.txt"):
         self.nodes = []
         self.arcs = {}
         self.filename = filename
-        if filename.endswith('.txt'):
-            self.parsing_txt_file(filename=filename)
-        # self.render()
-        print(self.str_matrix(self.adjacency_matrix()))
+        self.historique = []
+        self.parsing_txt_file(filename=filename)
 
     def __str__(self):
         chaine = "nodes:"
         for node in self.nodes:
             chaine += " " + node
         chaine += "\n"
-        for node, arcs in self.arcs.items():
+        for arcs in self.arcs.values():
             for arc in arcs:
-                chaine += f"{node} ==({arc[0]})==> {arc[1]}\n"
+                chaine += f"{arc.start} ==({arc.dist})==> {arc.end}\n"
         return chaine
 
     def str_matrix(self, matrix):
-        column_names = [node for node in self.nodes]
-        row_names = [node for node in self.nodes]
+        column_names = [node.name for node in self.nodes]
+        row_names = [node.name for node in self.nodes]
         pt = PrettyTable()
         pt.field_names = ["Node"] + column_names
         for i in range(len(self.nodes)):
             pt.add_row(
                 [row_names[i]] + [matrix[i][j] if matrix[i][j] is not None else "X" for j in range(len(self.nodes))])
-        return pt
+        return str(pt)
 
     def adjacency_matrix(self) -> List[list]:
         matrix = []
         for i, node1 in enumerate(self.nodes):
             matrix.append([])
             for j, node2 in enumerate(self.nodes):
-                matrix[i].append(self.dist(node1, node2) if node2 in self.children(node1) else None)
+                matrix[i].append("V" if node2 in self.children(node1) else "F")
         return matrix
 
     def add_arc(self, x, y, value) -> None:
         if x not in self.arcs.keys():
             raise f"{x} not in arcs"
-        self.arcs[x].append((y, value))
+        self.arcs[x].append(Arc(self.find_node(x), self.find_node(y), value))
 
-    def rank_compute(self, mode: RankComputeMode) -> list:
-        pass
+    def find_node(self, name: str):
+        for node in self.nodes:
+            if node.name == name:
+                return node
+        return -1
 
-    def parents(self, node: str) -> List[str]:
+    def rank_compute(self, mode: RankComputeMode) -> int:
+        if RankComputeMode.starting_node_elimination:
+            graph = Graph("temp/temp.txt")
+            r = 1
+            while not self.are_all_nodes_ranked():
+                entry_points = graph.entry_points()
+                if len(entry_points) == 0:
+                    for node in self.nodes:
+                        node.rang = None
+                    return -1
+                for entry in entry_points:
+                    graph.nodes.remove(entry)
+                    graph.arcs[entry.name] = []
+                    self.find_node(entry.name).rang = r
+                r += 1
+            del graph
+            return 0
+
+    def entry_points(self) -> List[Node]:
+        entry_points = []
+        for node in self.nodes:
+            if len(self.parents(node)) == 0:
+                entry_points.append(node)
+        return entry_points
+
+    def exit_points(self) -> List[Node]:
+        exit_points = []
+        for node in self.nodes:
+            if len(self.children(node)) == 0:
+                exit_points.append(node)
+        return exit_points
+
+    def unique_entry_point(self) -> bool:
+        return len(self.entry_points()) == 1
+
+    def unique_exit_point(self) -> bool:
+        return len(self.exit_points()) == 1
+
+    def are_all_nodes_ranked(self) -> bool:
+        for node in self.nodes:
+            if node.rang is None:
+                return False
+        return True
+
+    def parents(self, node: Node) -> List[Node]:
         parents = []
-        for key, arc in self.arcs.items():
-            if node in value:
-                parents.append(key)
+        for arcs in self.arcs.values():
+            for arc in arcs:
+                if arc.end == node:
+                    parents.append(arc.start)
         return parents
 
-    def children(self, node: str) -> Tuple[str]:
-        return tuple(arc.end for arc in self.arcs[node])
+    def children(self, node: Node) -> Tuple[Node]:
+        return tuple(arc.end for arc in self.arcs[node.name])
 
     def dist(self, x: str, y: str) -> int:
         if x not in self.arcs.keys():
             raise f"{x} not in arcs"
         for arc in self.arcs[x]:
-            if arc[1] == y:
-                return arc[0]
+            if arc.end == y:
+                return arc.dist
         raise f"{y} not in {x} arcs"
 
-    def render(self, format: str = "png") -> None:
+    def render(self, path: str, filename: str, format: str = "png") -> None:
         gv = graphviz.Digraph(format=format)
-        gv.graph_attr['rankdir'] = 'LR'
-        for start, value in self.arcs.items():
-            for node in value:
-                gv.edge(start, node)
-        gv.render(f'renders/{self.filename.split("/")[-1].replace(".txt", "")}.gv')
+        gv.attr(bgcolor="transparent")
+        gv.attr(rankdir="LR")
+        for node in self.nodes:
+            if node.rang is not None:
+                gv.node(node.name, xlabel=str(node.rang), shape="circle", style="filled",
+                        fillcolor="white")
+            else:
+                gv.node(node.name, shape="circle", style="filled",
+                        fillcolor="white")
+        for arcs in self.arcs.values():
+            for arc in arcs:
+                gv.edge(arc.start.name, arc.end.name, label=arc.dist)
+        gv.render(f"{path}{filename}")
+
+    def write_txt_file(self, filename: str) -> None:
+        with open(filename, "w") as graph_file:
+            lines = [str(len(self.nodes)), str(len(self.arcs))]
+            for arcs in self.arcs.values():
+                for arc in arcs:
+                    lines.append(f"{arc.start.name} {arc.end.name} {arc.dist}")
+            for line in lines:
+                graph_file.write(line + "\n")
 
     def parsing_txt_file(self, filename: str) -> None:
         with open(filename, "r") as graph_file:
@@ -88,4 +153,4 @@ class Graph:
                 self.arcs[node] = []
             for i in range(int(lines[1])):
                 line = lines[2 + i].split(" ")
-                self.add_arc(line[0], line[2], line[1])
+                self.add_arc(line[0], line[1], line[2])

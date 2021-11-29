@@ -1,6 +1,6 @@
-from .Node import Node
-
 from dataclasses import dataclass
+
+from .Node import Node
 
 
 @dataclass

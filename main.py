@@ -1,4 +1,10 @@
-from classes.Graph import Graph
+import sys
+
+from PyQt5.QtWidgets import QApplication
+
+from classes.App import App
 
 if __name__ == '__main__':
-    graph = Graph()
+    app = QApplication(sys.argv)
+    fen = App()
+    app.exec()
